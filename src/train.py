@@ -13,7 +13,7 @@ from modeling import train_and_evaluate
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train stock movement forecasting model.")
-    parser.add_argument("--ticker", default="AAPL", help="Stock ticker, e.g. AAPL, MSFT, TSLA")
+    parser.add_argument("--ticker", default="AAPL", help="Stock symbol, e.g. AAPL, MSFT, TSLA")
     parser.add_argument("--start", default="2015-01-01", help="Start date in YYYY-MM-DD")
     parser.add_argument("--end", default=None, help="End date in YYYY-MM-DD")
     parser.add_argument(

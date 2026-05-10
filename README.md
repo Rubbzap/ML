@@ -68,9 +68,16 @@ streamlit run src/app.py
 
 Dashboard รองรับภาษาไทย/English และมีหน้าจอใช้งานแบบง่ายสำหรับ user ทั่วไป:
 
-- เลือกหุ้นยอดนิยม หรือพิมพ์ ticker เอง
-- เลือกช่วงวันที่และโมเดล
+- เลือกสัญลักษณ์ยอดนิยม หรือพิมพ์ symbol เอง
+- กำหนดวันเริ่มต้นและวันสิ้นสุดเองได้
+- ติ๊กใช้วันปัจจุบันเป็นวันสิ้นสุดได้
+- มีคำแนะนำว่าควรใช้ข้อมูลอย่างน้อย 3 เดือนขึ้นไปสำหรับการ train/test
+- ถ้าเลือกช่วงสั้น ระบบจะใช้ short-term indicators อัตโนมัติ เช่น MA3, MA5, MA10, MA20 เพื่อให้ข้อมูลไม่หายจาก rolling window มากเกินไป
+- เลือกโมเดลและกดวิเคราะห์ครั้งเดียวเพื่อให้หน้าเว็บลื่นขึ้น
+- ใช้โหมด Auto recommend เพื่อให้ระบบเทียบ Logistic Regression, Random Forest และ XGBoost แล้วเลือกโมเดลที่คะแนนดีที่สุด
 - ดูสัญญาณล่าสุด, metrics, candlestick chart, volume, backtest และ feature importance
+- ดูคำอธิบายตัวแปรแบบเข้าใจง่าย เช่น RSI, MACD, volatility, moving average และ return lag
+- ดูข่าวล่าสุดพร้อมลิงก์อ้างอิงจาก Yahoo Finance และ Google News RSS เพื่อประกอบเหตุผลของสัญญาณ
 
 ## การใช้งาน R
 

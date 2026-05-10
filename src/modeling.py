@@ -55,7 +55,14 @@ def build_model(model_name: str, random_state: int = 42):
         return Pipeline(
             steps=[
                 ("scaler", StandardScaler()),
-                ("classifier", LogisticRegression(max_iter=2000, random_state=random_state)),
+                (
+                    "classifier",
+                    LogisticRegression(
+                        max_iter=2000,
+                        class_weight="balanced",
+                        random_state=random_state,
+                    ),
+                ),
             ]
         )
 
@@ -64,6 +71,7 @@ def build_model(model_name: str, random_state: int = 42):
             n_estimators=300,
             max_depth=5,
             min_samples_leaf=5,
+            class_weight="balanced_subsample",
             random_state=random_state,
             n_jobs=-1,
         )
@@ -116,13 +124,18 @@ def tune_model(model_name: str, x_train, y_train, random_state: int = 42):
     return search.best_estimator_, search.best_params_
 
 
-def evaluate_model(estimator, x_test, y_test) -> tuple[dict, np.ndarray, np.ndarray]:
-    pred = estimator.predict(x_test)
-
+def evaluate_model(
+    estimator,
+    x_test,
+    y_test,
+    threshold: float = 0.5,
+) -> tuple[dict, np.ndarray, np.ndarray]:
     if hasattr(estimator, "predict_proba"):
         proba = estimator.predict_proba(x_test)[:, 1]
     else:
-        proba = pred
+        proba = estimator.predict(x_test)
+
+    pred = (proba >= threshold).astype(int)
 
     metrics = {
         "accuracy": accuracy_score(y_test, pred),
@@ -130,10 +143,25 @@ def evaluate_model(estimator, x_test, y_test) -> tuple[dict, np.ndarray, np.ndar
         "recall": recall_score(y_test, pred, zero_division=0),
         "f1": f1_score(y_test, pred, zero_division=0),
         "roc_auc": roc_auc_score(y_test, proba) if len(np.unique(y_test)) > 1 else np.nan,
+        "decision_threshold": threshold,
         "confusion_matrix": confusion_matrix(y_test, pred).tolist(),
         "classification_report": classification_report(y_test, pred, zero_division=0),
     }
     return metrics, pred, proba
+
+
+def find_best_threshold(y_true, probabilities) -> float:
+    best_threshold = 0.5
+    best_score = -1.0
+
+    for threshold in np.arange(0.35, 0.66, 0.01):
+        pred = (probabilities >= threshold).astype(int)
+        score = f1_score(y_true, pred, zero_division=0)
+        if score > best_score:
+            best_score = score
+            best_threshold = float(round(threshold, 2))
+
+    return best_threshold
 
 
 def train_and_evaluate(
@@ -142,6 +170,7 @@ def train_and_evaluate(
     model_name: str,
     tune: bool = False,
     random_state: int = 42,
+    optimize_threshold: bool = True,
 ) -> TrainResult:
     x_train, x_test, y_train, y_test = time_based_split(df, feature_columns)
 
@@ -150,9 +179,21 @@ def train_and_evaluate(
     else:
         estimator = build_model(model_name, random_state=random_state)
         best_params = None
-        estimator.fit(x_train, y_train)
 
-    metrics, pred, proba = evaluate_model(estimator, x_test, y_test)
+    threshold = 0.5
+    if optimize_threshold and len(x_train) >= 300:
+        validation_start = int(len(x_train) * 0.8)
+        x_fit, x_val = x_train.iloc[:validation_start], x_train.iloc[validation_start:]
+        y_fit, y_val = y_train.iloc[:validation_start], y_train.iloc[validation_start:]
+
+        threshold_estimator = build_model(model_name, random_state=random_state)
+        threshold_estimator.fit(x_fit, y_fit)
+        if hasattr(threshold_estimator, "predict_proba"):
+            val_proba = threshold_estimator.predict_proba(x_val)[:, 1]
+            threshold = find_best_threshold(y_val, val_proba)
+
+    estimator.fit(x_train, y_train)
+    metrics, pred, proba = evaluate_model(estimator, x_test, y_test, threshold=threshold)
     metrics["best_params"] = best_params
 
     predictions = df.iloc[-len(y_test) :][["Date", "Close", "target", "return_1d"]].copy()

@@ -85,7 +85,7 @@ target = 0 ถ้า Close(t+1) <= Close(t)
 
 ใช้ Streamlit dashboard โดยมีฟีเจอร์:
 
-- เลือก ticker หุ้น
+- เลือก symbol หุ้น
 - เลือกช่วงวันที่
 - เลือกโมเดล
 - แสดงกราฟราคาหุ้น

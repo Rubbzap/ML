@@ -8,7 +8,7 @@ from plotly.subplots import make_subplots
 
 from backtesting import run_directional_backtest
 from config import DEFAULT_TICKER, RANDOM_STATE
-from data_loader import download_stock_data
+from data_loader import download_intraday_data, download_stock_data, fetch_stock_news, resample_to_monthly
 from features import add_technical_indicators, get_feature_columns
 from modeling import train_and_evaluate
 
@@ -23,7 +23,12 @@ st.set_page_config(
 
 POPULAR_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "META", "SPY", "QQQ"]
 RANGE_KEYS = ["1D", "5D", "1M", "3M", "YTD", "1Y", "5Y", "10Y", "ALL"]
-MIN_TRAIN_ROWS = 180
+MIN_TRAIN_ROWS = 40
+MIN_MONTHLY_ROWS = 24
+SHORT_DAILY_RAW_ROWS = 180
+AUTO_MODELS = ["logistic", "random_forest", "xgboost"]
+DEFAULT_CUSTOM_START = pd.Timestamp.today().normalize() - pd.DateOffset(years=5)
+DEFAULT_CUSTOM_END = pd.Timestamp.today().normalize()
 
 
 TEXT = {
@@ -32,9 +37,9 @@ TEXT = {
         "app_subtitle": "แดชบอร์ดพยากรณ์ทิศทางหุ้นด้วย Machine Learning",
         "language": "ภาษา / Language",
         "control_panel": "ตั้งค่าการวิเคราะห์",
-        "quick_pick": "เลือกหุ้นยอดนิยม",
+        "quick_pick": "เลือกสัญลักษณ์ยอดนิยม",
         "custom_ticker": "ใช้สัญลักษณ์ที่พิมพ์เอง",
-        "ticker": "สัญลักษณ์หุ้น",
+        "ticker": "Symbol",
         "range": "ช่วงเวลา",
         "model": "โมเดล",
         "tune": "ปรับจูนโมเดล",
@@ -89,9 +94,9 @@ TEXT = {
         "app_subtitle": "Machine learning dashboard for stock direction signals",
         "language": "Language",
         "control_panel": "Analysis Settings",
-        "quick_pick": "Popular tickers",
-        "custom_ticker": "Use typed ticker",
-        "ticker": "Ticker",
+        "quick_pick": "Popular symbols",
+        "custom_ticker": "Use typed symbol",
+        "ticker": "Symbol",
         "range": "Range",
         "model": "Model",
         "tune": "Tune model",
@@ -141,6 +146,82 @@ TEXT = {
             "xgboost": "XGBoost",
         },
     },
+}
+
+
+TEXT["TH"].update(
+    {
+        "auto_model": "แนะนำอัตโนมัติ",
+        "recommended_model": "โมเดลแนะนำ",
+        "model_score": "คะแนนโมเดล",
+        "model_comparison": "เปรียบเทียบโมเดล",
+        "chosen_model": "โมเดลที่ใช้",
+        "all_range_note": "ช่วงทั้งหมดดึงจากวันที่หุ้นมีข้อมูลใน Yahoo Finance จนถึงปัจจุบัน",
+        "intraday_note": "กราฟ 1 วันใช้ข้อมูลระหว่างวัน เพื่อให้อ่านการเคลื่อนไหวรายวันง่ายขึ้น",
+        "start_date": "วันเริ่มต้น",
+        "end_date_input": "วันสิ้นสุด",
+        "date_note": "กราฟและโมเดลใช้ข้อมูลตามช่วงวันที่ที่กำหนดเอง",
+        "range_note": "เลือกวันเริ่มต้นและวันสิ้นสุดได้เอง ระบบจะใช้ข้อมูลในช่วงนั้นสำหรับกราฟและการฝึกโมเดล",
+        "ready": "เลือกหุ้น วันเริ่มต้น วันสิ้นสุด และกด วิเคราะห์หุ้น เพื่อเริ่มใช้งาน",
+        "frequency": "ความถี่ข้อมูล",
+        "daily": "รายวัน",
+        "monthly": "รายเดือน",
+        "use_today": "ใช้วันปัจจุบันเป็นวันสิ้นสุด",
+        "date_requirement": "ควรเลือกช่วงอย่างน้อย 3 เดือนขึ้นไป เพื่อให้โมเดลมีข้อมูลพอสำหรับ train/test. ถ้าช่วงสั้น ระบบจะใช้ตัวแปรแบบ short-term เพื่อลดปัญหาข้อมูลไม่พอ",
+        "news_tab": "ข่าวและเหตุผล",
+        "news_rationale": "เหตุผลประกอบจากข่าวล่าสุด",
+        "news_sources": "ข่าวอ้างอิง",
+        "news_sentiment": "โทนข่าว",
+        "positive": "บวก",
+        "negative": "ลบ",
+        "neutral": "กลาง",
+        "prediction_reason": "สาเหตุที่ระบบให้สัญญาณนี้",
+        "no_news": "ยังดึงข่าวล่าสุดไม่ได้ในตอนนี้",
+        "not_enough": "ข้อมูลยังไม่พอสำหรับฝึกโมเดล ลองเลือกช่วงอย่างน้อย 3 เดือนขึ้นไป",
+    }
+)
+TEXT["TH"]["model_names"] = {
+    "auto": "แนะนำอัตโนมัติ",
+    "logistic": "Logistic Regression",
+    "random_forest": "Random Forest",
+    "xgboost": "XGBoost",
+}
+TEXT["EN"].update(
+    {
+        "auto_model": "Auto recommend",
+        "recommended_model": "Recommended model",
+        "model_score": "Model score",
+        "model_comparison": "Model comparison",
+        "chosen_model": "Selected model",
+        "all_range_note": "All uses the earliest available Yahoo Finance data for the stock through today",
+        "intraday_note": "The 1D chart uses intraday data so daily movement is easier to read",
+        "start_date": "Start date",
+        "end_date_input": "End date",
+        "date_note": "The chart and model use the custom date range you selected.",
+        "range_note": "Choose your own start and end dates. The system uses that period for both charting and model training.",
+        "ready": "Choose a stock, start date, end date, and click Analyze stock to begin",
+        "frequency": "Data frequency",
+        "daily": "Daily",
+        "monthly": "Monthly",
+        "use_today": "Use today as end date",
+        "date_requirement": "Use at least 3 months of data so the model has enough observations for train/test. For shorter ranges, the app uses short-term features to reduce data loss.",
+        "news_tab": "News & Rationale",
+        "news_rationale": "Rationale from recent news",
+        "news_sources": "Referenced news",
+        "news_sentiment": "News tone",
+        "positive": "Positive",
+        "negative": "Negative",
+        "neutral": "Neutral",
+        "prediction_reason": "Why the system produced this signal",
+        "no_news": "Recent news could not be loaded right now",
+        "not_enough": "Not enough data to train the model. Try at least 3 months of history.",
+    }
+)
+TEXT["EN"]["model_names"] = {
+    "auto": "Auto recommend",
+    "logistic": "Logistic Regression",
+    "random_forest": "Random Forest",
+    "xgboost": "XGBoost",
 }
 
 
@@ -199,9 +280,29 @@ FEATURE_EXPLANATIONS = {
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def load_data(ticker: str, start: str) -> pd.DataFrame:
-    raw = download_stock_data(ticker, start, None)
-    return add_technical_indicators(raw)
+def load_data(ticker: str, start: str, end: str | None = None, frequency: str = "daily") -> pd.DataFrame:
+    yahoo_end = None
+    if end:
+        yahoo_end = str((pd.to_datetime(end) + pd.Timedelta(days=1)).date())
+    raw = download_stock_data(ticker, start, yahoo_end)
+    if frequency == "monthly":
+        raw = resample_to_monthly(raw)
+        profile = "monthly"
+    elif len(raw) < SHORT_DAILY_RAW_ROWS:
+        profile = "daily_short"
+    else:
+        profile = "daily"
+    return add_technical_indicators(raw, profile=profile)
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def load_intraday_chart_data(ticker: str) -> pd.DataFrame:
+    return download_intraday_data(ticker, period="1d", interval="5m")
+
+
+@st.cache_data(show_spinner=False, ttl=900)
+def load_news(ticker: str) -> pd.DataFrame:
+    return fetch_stock_news(ticker, limit=12)
 
 
 def t(key: str, lang: str) -> str:
@@ -357,20 +458,32 @@ def get_feature_explanation(feature: str, lang: str) -> tuple[str, str]:
     if feature.startswith("return_lag_"):
         days = feature.replace("return_lag_", "")
         if lang == "TH":
-            return (f"ผลตอบแทนย้อนหลัง {days} วัน", "ช่วยให้โมเดลดูว่าก่อนหน้านี้ราคามี momentum ขึ้นหรือลง")
-        return (f"Return from {days} day(s) ago", "Helps the model read recent upward or downward momentum")
+            return (f"ผลตอบแทนย้อนหลัง {days} ช่วงเวลา", "ช่วยให้โมเดลดูว่าก่อนหน้านี้ราคามี momentum ขึ้นหรือลง")
+        return (f"Return from {days} period(s) ago", "Helps the model read recent upward or downward momentum")
+
+    if feature.startswith("rolling_volatility_"):
+        periods = feature.replace("rolling_volatility_", "")
+        if lang == "TH":
+            return (f"ความผันผวนย้อนหลัง {periods} ช่วงเวลา", "ยิ่งสูงยิ่งแปลว่าราคาแกว่งแรง")
+        return (f"{periods}-period volatility", "Higher values mean the price has been moving more sharply")
+
+    if feature.startswith("rsi_"):
+        periods = feature.replace("rsi_", "")
+        if lang == "TH":
+            return (f"RSI {periods} ช่วงเวลา", "ใช้ดูภาวะซื้อเยอะหรือขายเยอะเมื่อเทียบกับช่วงก่อนหน้า")
+        return (f"{periods}-period RSI", "Used to detect overbought or oversold conditions")
 
     if feature.startswith("ma_"):
         days = feature.replace("ma_", "")
         if lang == "TH":
-            return (f"ราคาเฉลี่ยย้อนหลัง {days} วัน", "ใช้ดูแนวโน้มราคาโดยลด noise รายวัน")
-        return (f"{days}-day moving average", "Shows the broader trend by smoothing daily noise")
+            return (f"ราคาเฉลี่ยย้อนหลัง {days} ช่วงเวลา", "ใช้ดูแนวโน้มราคาโดยลด noise")
+        return (f"{days}-period moving average", "Shows the broader trend by smoothing noise")
 
     if feature.startswith("price_to_ma_"):
         days = feature.replace("price_to_ma_", "")
         if lang == "TH":
-            return (f"ราคาปัจจุบันเทียบกับ MA {days} วัน", "ค่าบวกแปลว่าราคาอยู่เหนือเส้นเฉลี่ย ค่าลบแปลว่าอยู่ต่ำกว่า")
-        return (f"Price versus {days}-day MA", "Positive means price is above the average; negative means below it")
+            return (f"ราคาปัจจุบันเทียบกับ MA {days} ช่วงเวลา", "ค่าบวกแปลว่าราคาอยู่เหนือเส้นเฉลี่ย ค่าลบแปลว่าอยู่ต่ำกว่า")
+        return (f"Price versus {days}-period MA", "Positive means price is above the average; negative means below it")
 
     if feature.startswith("bb_"):
         if lang == "TH":
@@ -397,7 +510,7 @@ def build_feature_table(importance: pd.DataFrame, lang: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def build_price_chart(dataset: pd.DataFrame, ticker: str, range_key: str, lang: str) -> go.Figure:
+def build_price_chart(dataset: pd.DataFrame, ticker: str, title_suffix: str) -> go.Figure:
     fig = make_subplots(
         rows=2,
         cols=1,
@@ -454,7 +567,7 @@ def build_price_chart(dataset: pd.DataFrame, ticker: str, range_key: str, lang: 
         col=1,
     )
     fig.update_layout(
-        title=f"{ticker.upper()} - {RANGE_LABELS[lang][range_key]}",
+        title=f"{ticker.upper()} - {title_suffix}",
         template="plotly_dark",
         height=610,
         margin=dict(l=18, r=18, t=48, b=18),
@@ -463,7 +576,52 @@ def build_price_chart(dataset: pd.DataFrame, ticker: str, range_key: str, lang: 
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         xaxis_rangeslider_visible=False,
         hovermode="x unified",
-        uirevision=f"{ticker}-{range_key}",
+        uirevision=f"{ticker}-{title_suffix}",
+    )
+    fig.update_yaxes(gridcolor="#334155", zerolinecolor="#334155")
+    fig.update_xaxes(gridcolor="#334155", zerolinecolor="#334155")
+    return fig
+
+
+def build_intraday_chart(dataset: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.03,
+        row_heights=[0.72, 0.28],
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=dataset["Date"],
+            y=dataset["Close"],
+            mode="lines",
+            line=dict(color="#38bdf8", width=2),
+            name="Price",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=dataset["Date"],
+            y=dataset["Volume"],
+            marker_color="#475569",
+            name="Volume",
+        ),
+        row=2,
+        col=1,
+    )
+    fig.update_layout(
+        title=f"{ticker.upper()} - {RANGE_LABELS[lang]['1D']}",
+        template="plotly_dark",
+        height=610,
+        margin=dict(l=18, r=18, t=48, b=18),
+        paper_bgcolor="#0f172a",
+        plot_bgcolor="#111827",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        hovermode="x unified",
+        uirevision=f"{ticker}-intraday",
     )
     fig.update_yaxes(gridcolor="#334155", zerolinecolor="#334155")
     fig.update_xaxes(gridcolor="#334155", zerolinecolor="#334155")
@@ -513,30 +671,191 @@ def format_metric_table(metrics: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def run_analysis(ticker: str, range_key: str, model_name: str, tune: bool) -> dict:
-    dataset = load_data(ticker, download_start_for_range(range_key))
-    if len(dataset) < MIN_TRAIN_ROWS:
+def score_result(result) -> float:
+    roc_auc = result.metrics.get("roc_auc", 0)
+    if pd.isna(roc_auc):
+        roc_auc = 0
+    return (
+        result.metrics.get("f1", 0) * 0.5
+        + result.metrics.get("accuracy", 0) * 0.3
+        + roc_auc * 0.2
+    )
+
+
+def build_model_comparison(results: list) -> pd.DataFrame:
+    rows = []
+    for result in results:
+        rows.append(
+            {
+                "model": result.model_name,
+                "score": round(score_result(result), 4),
+                "accuracy": round(result.metrics.get("accuracy", 0), 4),
+                "f1": round(result.metrics.get("f1", 0), 4),
+                "roc_auc": round(result.metrics.get("roc_auc", 0), 4),
+                "threshold": result.metrics.get("decision_threshold", 0.5),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
+
+
+def score_news_sentiment(news: pd.DataFrame) -> tuple[str, int]:
+    if news.empty:
+        return "neutral", 0
+
+    positive_words = {
+        "beat",
+        "beats",
+        "upgrade",
+        "upgraded",
+        "growth",
+        "surge",
+        "rally",
+        "record",
+        "profit",
+        "strong",
+        "bullish",
+        "raises",
+        "buy",
+        "outperform",
+        "partnership",
+        "launch",
+    }
+    negative_words = {
+        "miss",
+        "misses",
+        "downgrade",
+        "downgraded",
+        "drop",
+        "falls",
+        "fall",
+        "lawsuit",
+        "probe",
+        "weak",
+        "bearish",
+        "cuts",
+        "sell",
+        "underperform",
+        "risk",
+        "loss",
+        "slump",
+    }
+
+    score = 0
+    for title in news["title"].fillna("").head(8):
+        tokens = set(str(title).lower().replace("-", " ").split())
+        score += len(tokens & positive_words)
+        score -= len(tokens & negative_words)
+
+    if score >= 2:
+        return "positive", score
+    if score <= -2:
+        return "negative", score
+    return "neutral", score
+
+
+def build_prediction_reason(signal_is_buy: bool, probability_up: float, news_tone: str, lang: str) -> str:
+    if lang == "TH":
+        signal_text = "ขาขึ้น" if signal_is_buy else "ขาลง/หลีกเลี่ยง"
+        tone_text = {
+            "positive": "ข่าวล่าสุดออกไปทางบวก",
+            "negative": "ข่าวล่าสุดออกไปทางลบ",
+            "neutral": "ข่าวล่าสุดยังเป็นกลางหรือปะปนกัน",
+        }[news_tone]
+        return (
+            f"โมเดลให้สัญญาณ {signal_text} เพราะความน่าจะเป็นขาขึ้นอยู่ที่ {probability_up:.1%}. "
+            f"{tone_text} จึงใช้เป็นบริบทประกอบ ไม่ใช่ตัวตัดสินเพียงอย่างเดียว."
+        )
+
+    signal_text = "upside" if signal_is_buy else "downside / avoid"
+    tone_text = {
+        "positive": "recent news is mostly positive",
+        "negative": "recent news is mostly negative",
+        "neutral": "recent news is mixed or neutral",
+    }[news_tone]
+    return (
+        f"The model gives a {signal_text} signal because the estimated upside probability is {probability_up:.1%}. "
+        f"{tone_text}, so it is shown as supporting context rather than the only decision factor."
+    )
+
+
+def train_selected_model(dataset: pd.DataFrame, feature_columns: list[str], model_name: str, tune: bool):
+    if model_name != "auto":
+        result = train_and_evaluate(
+            dataset,
+            feature_columns,
+            model_name,
+            tune=tune,
+            random_state=RANDOM_STATE,
+            optimize_threshold=True,
+        )
+        return result, pd.DataFrame()
+
+    candidate_results = [
+        train_and_evaluate(
+            dataset,
+            feature_columns,
+            candidate,
+            tune=False,
+            random_state=RANDOM_STATE,
+            optimize_threshold=True,
+        )
+        for candidate in AUTO_MODELS
+    ]
+    comparison = build_model_comparison(candidate_results)
+    recommended_name = comparison.iloc[0]["model"]
+
+    if tune:
+        recommended = train_and_evaluate(
+            dataset,
+            feature_columns,
+            recommended_name,
+            tune=True,
+            random_state=RANDOM_STATE,
+            optimize_threshold=True,
+        )
+    else:
+        recommended = next(result for result in candidate_results if result.model_name == recommended_name)
+
+    return recommended, comparison
+
+
+def run_analysis(
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    model_name: str,
+    tune: bool,
+    frequency: str,
+) -> dict:
+    dataset = load_data(ticker, start_date, end_date, frequency)
+    min_rows = MIN_MONTHLY_ROWS if frequency == "monthly" else MIN_TRAIN_ROWS
+    if len(dataset) < min_rows:
         raise ValueError("not_enough")
 
     feature_columns = get_feature_columns(dataset)
-    result = train_and_evaluate(
-        dataset,
-        feature_columns,
-        model_name,
-        tune=tune,
-        random_state=RANDOM_STATE,
-    )
+    result, model_comparison = train_selected_model(dataset, feature_columns, model_name, tune)
     backtest_df, backtest_metrics = run_directional_backtest(result.predictions)
+    news = load_news(ticker)
+    news_tone, news_score = score_news_sentiment(news)
+
     return {
         "ticker": ticker,
-        "range_key": range_key,
-        "model_name": model_name,
+        "start_date": start_date,
+        "end_date": end_date,
+        "frequency": frequency,
+        "model_name": result.model_name,
+        "requested_model_name": model_name,
         "tune": tune,
         "dataset": dataset,
-        "visible_dataset": filter_visible_range(dataset, range_key),
+        "visible_dataset": dataset,
+        "intraday_dataset": pd.DataFrame(),
         "result": result,
         "backtest_df": backtest_df,
         "backtest_metrics": backtest_metrics,
+        "model_comparison": model_comparison,
+        "news": news,
+        "news_tone": news_tone,
+        "news_score": news_score,
     }
 
 
@@ -555,23 +874,35 @@ def render_header(ticker: str, lang: str) -> None:
     )
 
 
-def render_empty_state(ticker: str, selected_model_label: str, range_key: str, tune: bool, lang: str) -> None:
+def render_empty_state(
+    ticker: str,
+    selected_model_label: str,
+    start_date,
+    end_date,
+    tune: bool,
+    lang: str,
+) -> None:
     st.info(t("ready", lang))
     cols = st.columns(4)
     cols[0].metric(t("ticker", lang), ticker.upper())
-    cols[1].metric(t("range", lang), RANGE_LABELS[lang][range_key])
-    cols[2].metric(t("model", lang), selected_model_label)
-    cols[3].metric(t("tune", lang), "ON" if tune else "OFF")
+    cols[1].metric(t("start_date", lang), str(start_date))
+    cols[2].metric(t("end_date_input", lang), str(end_date))
+    cols[3].metric(t("model", lang), selected_model_label)
+    st.caption(f"{t('tune', lang)}: {'ON' if tune else 'OFF'}")
 
 
 def render_results(state: dict, lang: str) -> None:
     ticker = state["ticker"]
-    range_key = state["range_key"]
+    start_date = state["start_date"]
+    end_date = state["end_date"]
     dataset = state["dataset"]
     visible_dataset = state["visible_dataset"]
     result = state["result"]
     backtest_df = state["backtest_df"]
     backtest_metrics = state["backtest_metrics"]
+    model_comparison = state.get("model_comparison", pd.DataFrame())
+    news = state.get("news", pd.DataFrame())
+    news_tone = state.get("news_tone", "neutral")
 
     latest = result.predictions.iloc[-1]
     signal_is_buy = latest["prediction"] == 1
@@ -589,22 +920,24 @@ def render_results(state: dict, lang: str) -> None:
             unsafe_allow_html=True,
         )
     with top_right:
-        cols = st.columns(5)
+        cols = st.columns(6)
         cols[0].metric(t("last_close", lang), f"${latest_close:,.2f}")
         cols[1].metric(t("confidence", lang), f"{latest['probability_up']:.1%}")
         cols[2].metric(t("accuracy", lang), f"{result.metrics['accuracy']:.3f}")
         cols[3].metric(t("f1", lang), f"{result.metrics['f1']:.3f}")
-        cols[4].metric(t("strategy_return", lang), f"{backtest_metrics['cumulative_strategy_return']:.2%}")
+        cols[4].metric(t("recommended_model", lang), TEXT[lang]["model_names"][result.model_name])
+        cols[5].metric(t("strategy_return", lang), f"{backtest_metrics['cumulative_strategy_return']:.2%}")
 
     st.markdown(f"<div class='range-note'>{t('range_note', lang)}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='range-note'>{t('date_note', lang)}</div>", unsafe_allow_html=True)
 
-    tab_price, tab_metrics, tab_backtest, tab_features, tab_explain = st.tabs(
+    tab_price, tab_metrics, tab_backtest, tab_features, tab_news = st.tabs(
         [
             t("price_tab", lang),
             t("model_tab", lang),
             t("backtest_tab", lang),
             t("feature_tab", lang),
-            t("explain_tab", lang),
+            t("news_tab", lang),
         ]
     )
 
@@ -615,22 +948,27 @@ def render_results(state: dict, lang: str) -> None:
     }
 
     with tab_price:
-        st.plotly_chart(
-            build_price_chart(visible_dataset, ticker, range_key, lang),
-            use_container_width=True,
-            config=chart_config,
-        )
+        chart_dataset = visible_dataset
+        chart_title = f"{start_date} to {end_date}"
+        chart = build_price_chart(chart_dataset, ticker, chart_title)
+        st.plotly_chart(chart, use_container_width=True, config=chart_config)
         info_cols = st.columns(4)
-        info_cols[0].metric(t("rows", lang), f"{len(visible_dataset):,}")
+        info_cols[0].metric(t("rows", lang), f"{len(chart_dataset):,}")
         info_cols[1].metric(t("train_rows", lang), f"{len(dataset):,}")
-        info_cols[2].metric(t("period", lang), str(visible_dataset["Date"].min().date()))
-        info_cols[3].metric(t("end_date", lang), str(visible_dataset["Date"].max().date()))
+        info_cols[2].metric(t("period", lang), str(pd.to_datetime(chart_dataset["Date"]).min()))
+        info_cols[3].metric(t("end_date", lang), str(pd.to_datetime(chart_dataset["Date"]).max()))
 
     with tab_metrics:
         left, right = st.columns([1.05, 1])
         with left:
+            st.metric(t("chosen_model", lang), TEXT[lang]["model_names"][result.model_name])
             st.subheader(t("metrics", lang))
             st.dataframe(format_metric_table(result.metrics), use_container_width=True, hide_index=True)
+            if not model_comparison.empty:
+                st.subheader(t("model_comparison", lang))
+                comparison = model_comparison.copy()
+                comparison["model"] = comparison["model"].map(TEXT[lang]["model_names"])
+                st.dataframe(comparison, use_container_width=True, hide_index=True)
             if result.metrics.get("best_params"):
                 st.subheader(t("best_params", lang))
                 st.json(result.metrics["best_params"])
@@ -685,11 +1023,18 @@ def render_results(state: dict, lang: str) -> None:
             st.plotly_chart(fig_imp, use_container_width=True, config=chart_config)
             st.dataframe(build_feature_table(importance, lang), use_container_width=True, hide_index=True)
 
-    with tab_explain:
-        sample_features = result.feature_importance.head(20) if result.feature_importance is not None else pd.DataFrame(
-            {"feature": get_feature_columns(dataset)[:20], "importance": [0] * min(20, len(get_feature_columns(dataset)))}
-        )
-        st.dataframe(build_feature_table(sample_features, lang), use_container_width=True, hide_index=True)
+    with tab_news:
+        st.subheader(t("prediction_reason", lang))
+        st.write(build_prediction_reason(signal_is_buy, latest["probability_up"], news_tone, lang))
+        st.metric(t("news_sentiment", lang), t(news_tone, lang))
+
+        st.subheader(t("news_sources", lang))
+        if news.empty:
+            st.warning(t("no_news", lang))
+        else:
+            for _, row in news.head(10).iterrows():
+                st.markdown(f"- [{row['title']}]({row['url']})")
+                st.caption(f"{row['source']} | {row['published']}")
 
 
 def main() -> None:
@@ -710,16 +1055,27 @@ def main() -> None:
             )
             use_custom = st.checkbox(t("custom_ticker", lang), value=False)
             typed_ticker = st.text_input(t("ticker", lang), value=DEFAULT_TICKER)
-            range_label_to_key = {RANGE_LABELS[lang][key]: key for key in RANGE_KEYS}
-            selected_range_label = st.selectbox(
-                t("range", lang),
-                list(range_label_to_key.keys()),
-                index=RANGE_KEYS.index("1Y"),
+            start_date = st.date_input(
+                t("start_date", lang),
+                value=DEFAULT_CUSTOM_START.date(),
+                max_value=DEFAULT_CUSTOM_END.date(),
             )
-            range_key = range_label_to_key[selected_range_label]
+            use_today = st.checkbox(t("use_today", lang), value=False)
+            end_date = st.date_input(
+                t("end_date_input", lang),
+                value=DEFAULT_CUSTOM_END.date() if use_today else DEFAULT_CUSTOM_END.date(),
+                min_value=start_date,
+                max_value=DEFAULT_CUSTOM_END.date(),
+            )
+            st.caption(t("date_requirement", lang))
 
             model_labels = {label: key for key, label in TEXT[lang]["model_names"].items()}
-            selected_model_label = st.selectbox(t("model", lang), list(model_labels.keys()), index=1)
+            model_options = list(model_labels.keys())
+            selected_model_label = st.selectbox(
+                t("model", lang),
+                model_options,
+                index=model_options.index(TEXT[lang]["model_names"]["auto"]),
+            )
             model_name = model_labels[selected_model_label]
             tune = st.toggle(t("tune", lang), value=False)
             submitted = st.form_submit_button(t("run", lang), type="primary", use_container_width=True)
@@ -732,7 +1088,14 @@ def main() -> None:
     if submitted:
         with st.spinner(t("loading", lang)):
             try:
-                st.session_state["analysis_result"] = run_analysis(ticker, range_key, model_name, tune)
+                st.session_state["analysis_result"] = run_analysis(
+                    ticker,
+                    str(start_date),
+                    str(end_date),
+                    model_name,
+                    tune,
+                    "daily",
+                )
             except ValueError as exc:
                 if str(exc) == "not_enough":
                     st.error(t("not_enough", lang))
@@ -741,7 +1104,14 @@ def main() -> None:
 
     state = st.session_state.get("analysis_result")
     if state is None:
-        render_empty_state(ticker, selected_model_label, range_key, tune, lang)
+        render_empty_state(
+            ticker,
+            selected_model_label,
+            start_date,
+            end_date,
+            tune,
+            lang,
+        )
         return
 
     render_results(state, lang)
