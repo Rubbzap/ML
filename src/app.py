@@ -973,7 +973,7 @@ def render_language_selector() -> tuple[str, str]:
         language_choice = st.selectbox(
             "ภาษา / Language",
             ["ไทย", "English"],
-            index=0,
+            index=1,
             key="language_choice",
         )
     lang = "TH" if language_choice == "ไทย" else "EN"
