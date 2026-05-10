@@ -333,7 +333,7 @@ def apply_theme() -> None:
             border-right: 1px solid var(--line);
         }
         .block-container {
-            padding-top: 1.25rem;
+            padding-top: 0.7rem;
             padding-bottom: 2rem;
             max-width: 1500px;
         }
@@ -361,12 +361,12 @@ def apply_theme() -> None:
             justify-content: space-between;
             align-items: flex-end;
             gap: 16px;
-            padding: 12px 0 12px;
+            padding: 4px 0 16px;
             border-bottom: 1px solid var(--line);
-            margin-bottom: 14px;
+            margin-bottom: 18px;
         }
         .tv-title {
-            font-size: 1.7rem;
+            font-size: 1.9rem;
             font-weight: 700;
             line-height: 1.2;
         }
@@ -402,6 +402,43 @@ def apply_theme() -> None:
             color: var(--muted);
             font-size: 0.9rem;
             padding: 8px 0 2px;
+        }
+        .topbar {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            min-height: 40px;
+            margin-bottom: 4px;
+        }
+        .empty-panel {
+            background: linear-gradient(180deg, #111827 0%, #0b1120 100%);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 22px 24px;
+            margin: 6px 0 20px;
+        }
+        .empty-title {
+            color: var(--text);
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .empty-copy {
+            color: var(--muted);
+            font-size: 0.95rem;
+            line-height: 1.55;
+        }
+        .sidebar-note {
+            color: var(--muted);
+            font-size: 0.82rem;
+            line-height: 1.5;
+            padding-top: 8px;
+        }
+        [data-testid="stSidebar"] [data-testid="stForm"] {
+            background: #0f172a;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14px;
         }
         div[data-testid="stTabs"] button {
             color: var(--muted);
@@ -874,6 +911,20 @@ def render_header(ticker: str, lang: str) -> None:
     )
 
 
+def render_language_selector() -> tuple[str, str]:
+    _, language_col = st.columns([5.5, 1.15])
+    with language_col:
+        language_choice = st.selectbox(
+            "ภาษา / Language",
+            ["ไทย", "English"],
+            index=0,
+            key="language_choice",
+        )
+    lang = "TH" if language_choice == "ไทย" else "EN"
+    st.session_state["top_lang"] = lang
+    return language_choice, lang
+
+
 def render_empty_state(
     ticker: str,
     selected_model_label: str,
@@ -882,7 +933,15 @@ def render_empty_state(
     tune: bool,
     lang: str,
 ) -> None:
-    st.info(t("ready", lang))
+    st.markdown(
+        f"""
+        <div class="empty-panel">
+            <div class="empty-title">{t('ready', lang)}</div>
+            <div class="empty-copy">{t('date_requirement', lang)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     cols = st.columns(4)
     cols[0].metric(t("ticker", lang), ticker.upper())
     cols[1].metric(t("start_date", lang), str(start_date))
@@ -1039,12 +1098,10 @@ def render_results(state: dict, lang: str) -> None:
 
 def main() -> None:
     apply_theme()
+    _, lang = render_language_selector()
 
     with st.sidebar:
-        language_choice = st.selectbox("ภาษา / Language", ["ไทย", "English"], index=0)
-        lang = "TH" if language_choice == "ไทย" else "EN"
-
-        st.divider()
+        lang = st.session_state.get("top_lang", lang)
         st.subheader(t("control_panel", lang))
 
         with st.form("analysis_controls"):
