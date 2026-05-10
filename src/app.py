@@ -324,6 +324,24 @@ def apply_theme() -> None:
             --amber: #f59e0b;
             --blue: #38bdf8;
         }
+        @keyframes fadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(14px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        @keyframes softPulse {
+            0%, 100% {
+                box-shadow: 0 0 0 rgba(56, 189, 248, 0);
+            }
+            50% {
+                box-shadow: 0 0 28px rgba(56, 189, 248, 0.16);
+            }
+        }
         .stApp {
             background: var(--bg);
             color: var(--text);
@@ -336,18 +354,29 @@ def apply_theme() -> None:
             padding-top: 0.7rem;
             padding-bottom: 2rem;
             max-width: 1500px;
+            animation: fadeSlideUp 420ms ease-out both;
         }
         h1, h2, h3, h4, label, .stMarkdown, .stMetric {
             color: var(--text) !important;
         }
         button, input, textarea, [data-baseweb="select"] {
-            transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+            transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, background 180ms ease;
+        }
+        button:hover {
+            transform: translateY(-1px);
         }
         div[data-testid="stMetric"] {
             background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
             border: 1px solid var(--line);
             border-radius: 8px;
             padding: 14px 16px;
+            transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+            animation: fadeSlideUp 360ms ease-out both;
+        }
+        div[data-testid="stMetric"]:hover {
+            border-color: rgba(56, 189, 248, 0.55);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+            transform: translateY(-2px);
         }
         div[data-testid="stMetricLabel"] {
             color: var(--muted);
@@ -364,6 +393,7 @@ def apply_theme() -> None:
             padding: 4px 0 16px;
             border-bottom: 1px solid var(--line);
             margin-bottom: 18px;
+            animation: fadeSlideUp 360ms ease-out both;
         }
         .tv-title {
             font-size: 1.9rem;
@@ -384,6 +414,7 @@ def apply_theme() -> None:
             border-radius: 999px;
             font-weight: 700;
             letter-spacing: 0;
+            animation: fadeSlideUp 320ms ease-out both, softPulse 2600ms ease-in-out infinite;
         }
         .status-buy {
             color: #052e16;
@@ -416,6 +447,13 @@ def apply_theme() -> None:
             border-radius: 8px;
             padding: 22px 24px;
             margin: 6px 0 20px;
+            animation: fadeSlideUp 420ms ease-out both;
+            transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+        }
+        .empty-panel:hover {
+            border-color: rgba(56, 189, 248, 0.42);
+            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
+            transform: translateY(-2px);
         }
         .empty-title {
             color: var(--text);
@@ -439,12 +477,30 @@ def apply_theme() -> None:
             border: 1px solid var(--line);
             border-radius: 8px;
             padding: 14px;
+            animation: fadeSlideUp 420ms ease-out both;
+        }
+        [data-testid="stTabs"] [role="tabpanel"] {
+            animation: fadeSlideUp 260ms ease-out both;
+        }
+        [data-testid="stDataFrame"],
+        [data-testid="stPlotlyChart"] {
+            animation: fadeSlideUp 360ms ease-out both;
         }
         div[data-testid="stTabs"] button {
             color: var(--muted);
         }
         div[data-testid="stTabs"] button[aria-selected="true"] {
             color: var(--blue);
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
+            }
         }
         </style>
         """,
