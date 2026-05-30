@@ -625,7 +625,7 @@ def build_price_chart(dataset: pd.DataFrame, ticker: str, title_suffix: str) -> 
         row=1,
         col=1,
     )
-    if len(dataset) >= 20:
+    if "ma_20" in dataset.columns and len(dataset) >= 20:
         fig.add_trace(
             go.Scatter(
                 x=dataset["Date"],
@@ -633,11 +633,11 @@ def build_price_chart(dataset: pd.DataFrame, ticker: str, title_suffix: str) -> 
                 mode="lines",
                 line=dict(color="#38bdf8", width=1.4),
                 name="MA20",
-            ),
-            row=1,
-            col=1,
-        )
-    if len(dataset) >= 50:
+        ),
+        row=1,
+        col=1,
+    )
+    if "ma_50" in dataset.columns and len(dataset) >= 50:
         fig.add_trace(
             go.Scatter(
                 x=dataset["Date"],
